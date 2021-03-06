@@ -1,0 +1,259 @@
+---
+title: "a1"
+author: "Jaekang Lee"
+date: "March 3, 2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(cmdstanr)
+library(posterior) # For manipulationg fit$draws()
+library(tidyverse)
+library(bayesplot)
+library(loo)
+library(deSolve)
+library(scatterplot3d)
+rank <- readRDS("rank_et_al_2003_data.RDS")
+```
+## subset data by subject
+```{r}
+head(rank)
+s1 <- rank %>% filter(dose=='10^1')
+s2 <- rank %>% filter(dose=='10^2')
+s3 <- rank %>% filter(dose=='10^3')
+s4 <- rank %>% filter(dose=='10^4')
+s5 <- rank %>% filter(dose=='sexual')
+```
+## Prior for C(0) = 0.001
+```{r}
+rigidode <- function(t, y, params) {
+  with(as.list(c(y, params)),{
+    dE <- Pe - delta*y[1] - k1*y[2]*y[1]
+    dC <- P*k2*y[3] - mu*y[2] - k1*y[2]*y[1]
+    dI <- k1*y[2]*y[1] - gamma*y[3] - k2*y[3]
+    list(c(dE, dC, dI))
+  })
+}
+yini <- c(E=0.96, C=1, I=0)
+params <- list(
+  P = 5000 ,
+  k1 = 0.2,
+  k2 = 0.6,
+  Pe = 40* 1e-4 ,
+  delta = 2,
+  gamma = 1.5,
+  mu = 0.8
+)
+t <- s1$t
+out <- ode(times=t, y=yini, func=rigidode, parms=params)
+#scatterplot3d(out[,-1], type='l')
+plot(out[,3], type='l', main='C(t)', ylab='C', xlab='t')
+```
+```{r}
+print(out)
+```
+## Prior for C(0) = 0.001
+```{r}
+rigidode <- function(t, y, params) {
+  with(as.list(c(y, params)),{
+    dE <- Pe - delta*y[1] - k1*y[2]*y[1]
+    dC <- P*k2*y[3] - mu*y[2] - k1*y[2]*y[1]
+    dI <- k1*y[2]*y[1] - gamma*y[3] - k2*y[3]
+    list(c(dE, dC, dI))
+  })
+}
+yini <- c(E=0.96, C=0.001, I=0)
+params <- list(
+  P = 5000 ,
+  k1 = 0.2,
+  k2 = 0.6,
+  Pe = 40* 1e-4 ,
+  delta = 2,
+  gamma = 1.5,
+  mu = 0.8
+)
+t <- s1$t
+out <- ode(times=t, y=yini, func=rigidode, parms=params)
+#scatterplot3d(out[,-1], type='l')
+plot(out[,3], type='l', main='C(t)', ylab='C', xlab='t')
+```
+```{r}
+print(out)
+```
+
+
+
+
+
+
+
+## Task 2 Fit data Subject 1: initial dose = 10
+```{r}
+#writeLines(readLines("C0_10.stan"))
+mod <- cmdstan_model("C0_10.stan")
+```
+int<lower=0> N;
+  real delta;
+  real Pe;
+  vector[N] y;
+  real t[N];
+```{r}
+fit_data1 <- list(N=10, y=s1$C, t=s1$t, D=10)
+#, P = 5000 , k1 = 0.2,  k2 = 0.6, gamma = 1.5, mu = 0.8)
+fit1 <- mod$sample(fit_data1, parallel_chains=4, refresh=0)
+```
+```{r}
+fit1$print()
+dimnames(fit1$draws())$variable
+```
+
+```{r}
+mus1 <- fit1$draws() %>% reshape2::melt() %>%
+  filter(str_detect(variable, "mu")) %>%
+  extract(col=variable, into="ind", regex="mu\\[([0-9]*)\\]", convert= TRUE) %>%
+  mutate(time=fit_data1$t[ind], chain_iter=glue::glue("chain {chain}, iteration {iteration}"), .keep="unused") %>%
+  rename(mu=value)
+mus1 %>% ggplot(aes(time, mu, group=chain_iter))+
+    geom_line(alpha=0.01) +
+    geom_point(data=data.frame(t=fit_data1$t, y=fit_data1$y), mapping=aes(t,y), inherit.aes=FALSE, colour="red")+
+    theme_minimal()
+```
+## Task 2 Fit data Subject 2: initial dose = 100
+```{r}
+#writeLines(readLines("C0_10.stan"))
+mod <- cmdstan_model("C0_100.stan")
+```
+
+```{r}
+fit_data2 <- list(N=10, y=s2$C, t=s2$t, D=100)
+#, P = 5000 , k1 = 0.2,  k2 = 0.6, gamma = 1.5, mu = 0.8)
+fit2 <- mod$sample(fit_data2, parallel_chains=4, refresh=0)
+```
+
+```{r}
+mus2 <- fit2$draws() %>% reshape2::melt() %>%
+  filter(str_detect(variable, "mu")) %>%
+  extract(col=variable, into="ind", regex="mu\\[([0-9]*)\\]", convert= TRUE) %>%
+  mutate(time=fit_data2$t[ind], chain_iter=glue::glue("chain {chain}, iteration {iteration}"), .keep="unused") %>%
+  rename(mu=value)
+mus2 %>% ggplot(aes(time, mu, group=chain_iter))+
+    geom_line(alpha=0.01) +
+    geom_point(data=data.frame(t=fit_data2$t, y=fit_data2$y), mapping=aes(t,y), inherit.aes=FALSE, colour="red")+
+    theme_minimal()
+```
+```{r}
+fit2$print()
+dimnames(fit2$draws())$variable
+```
+## Task 2 Fit data Subject 3: initial dose = 1000
+```{r}
+#writeLines(readLines("C0_10.stan"))
+mod <- cmdstan_model("C0_100.stan")
+```
+
+```{r}
+fit_data3 <- list(N=10, y=s3$C, t=s3$t, D=100)
+#, P = 5000 , k1 = 0.2,  k2 = 0.6, gamma = 1.5, mu = 0.8)
+fit3 <- mod$sample(fit_data3, parallel_chains=4, refresh=0)
+```
+```{r}
+mus3 <- fit3$draws() %>% reshape2::melt() %>%
+  filter(str_detect(variable, "mu")) %>%
+  extract(col=variable, into="ind", regex="mu\\[([0-9]*)\\]", convert= TRUE) %>%
+  mutate(time=fit_data3$t[ind], chain_iter=glue::glue("chain {chain}, iteration {iteration}"), .keep="unused") %>%
+  rename(mu=value)
+mus2 %>% ggplot(aes(time, mu, group=chain_iter))+
+    geom_line(alpha=0.005) +
+    geom_point(data=data.frame(t=fit_data3$t, y=fit_data3$y), mapping=aes(t,y), inherit.aes=FALSE, colour="red")+
+    theme_minimal()
+```
+
+## Task 2 Fit data Subject 4: initial dose = 10000
+```{r}
+#writeLines(readLines("C0_10.stan"))
+mod <- cmdstan_model("C0_100.stan")
+```
+
+```{r}
+fit_data4 <- list(N=10, y=s4$C, t=s4$t, D=100)
+#, P = 5000 , k1 = 0.2,  k2 = 0.6, gamma = 1.5, mu = 0.8)
+fit4 <- mod$sample(fit_data4, parallel_chains=4, refresh=0)
+```
+
+```{r}
+mus4 <- fit4$draws() %>% reshape2::melt() %>%
+  filter(str_detect(variable, "mu")) %>%
+  extract(col=variable, into="ind", regex="mu\\[([0-9]*)\\]", convert= TRUE) %>%
+  mutate(time=fit_data4$t[ind], chain_iter=glue::glue("chain {chain}, iteration {iteration}"), .keep="unused") %>%
+  rename(mu=value)
+mus2 %>% ggplot(aes(time, mu, group=chain_iter))+
+    geom_line(alpha=0.01) +
+    geom_point(data=data.frame(t=fit_data4$t, y=fit_data4$y), mapping=aes(t,y), inherit.aes=FALSE, colour="red")+
+    theme_minimal()
+```
+## Task 3
+```{r}
+#writeLines(readLines("C0_10.stan"))
+mod <- cmdstan_model("eb.stan")
+```
+
+```{r}
+# our posterior
+print(fit2)
+samples <- c(1:100)
+for(i in 1:100){
+  #Sample 1 draw, s5 corresponds to 'sexual' subjects
+  draw <- list(N=10, y=s5$C, t=s5$t, D=100,
+               k1 =abs(rnorm(N, 0, 0.09)),
+                     k2 =abs(rnorm(N, 0, 0.19)),
+                     gamma = abs(rnorm(N,0,0.14)),
+                     sigma = abs(rnorm(N,0,5.31)),
+                     P = abs(rnorm(N,0,5355.24)),
+                     u = abs(rnorm(N,0,0.3)))
+  fitted <- mod$sample(draw, iter_warmup = 1000, iter_sampling=200, parallel_chains=4, refresh=0)
+  # save at random
+  
+  # add to sample
+  samples[i] <- sample
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
